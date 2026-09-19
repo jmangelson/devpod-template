@@ -1,0 +1,54 @@
+{
+    "name": "jmangelson DevPod",
+
+    "build": {
+        "dockerfile": "Dockerfile",
+        "args": {
+            "USERNAME": "vscode",
+            "USER_UID": "1000",
+            "USER_GID": "1000"
+        }
+    },
+
+    "remoteUser": "vscode",
+
+    "containerEnv": {
+        "DISPLAY": ":99"
+    },
+
+    "remoteEnv": {
+        "PATH": "/home/vscode/.local/bin:/home/vscode/.npm-global/bin:${containerEnv:PATH}"
+    },
+
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "charliermarsh.ruff",
+                "anthropic.claude-code",
+                "openai.codex",
+                "ms-toolsai.jupyter"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/home/vscode/.venv/bin/python"
+            }
+        }
+    },
+
+    // postCreateCommand only starts the X/VNC daemons — they must be live
+    // processes and can't be baked into the image. Runs in a few seconds.
+    "postCreateCommand": "bash .devcontainer/start-display.sh",
+
+    "forwardPorts": [6080],
+
+    // ── External mounts ──────────────────────────────────────────────────────
+    // Add project-specific folder mounts here. They are NOT part of the image,
+    // so adding or changing one only recreates the container (seconds, no rebuild).
+    //
+    // Format:
+    //   "source=<host-path>,target=/workspaces/external/<name>,type=bind,consistency=cached"
+    //
+    // Example:
+    //   "source=/mnt/c/Users/you/projects/my-project,target=/workspaces/external/my-project,type=bind,consistency=cached"
+    "mounts": []
+}
