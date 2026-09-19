@@ -64,5 +64,9 @@
     //
     // Example:
     //   "source=/mnt/c/Users/you/projects/my-project,target=/workspaces/external/my-project,type=bind,consistency=cached"
+    //
+    // Append ",readonly" to mount read-only (e.g. reference data you don't
+    // want a stray write inside the container to touch):
+    //   "source=/mnt/c/Users/you/reference-data,target=/workspaces/external/reference-data,type=bind,consistency=cached,readonly"
     "mounts": []
 }

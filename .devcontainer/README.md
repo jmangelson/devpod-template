@@ -124,6 +124,15 @@ For example, to mount a Windows-side research folder into the container:
 
 The folder will be accessible inside the container at `/workspaces/external/26oceans-sim`. Add as many entries as you need -- each mount is a separate line in the array.
 
+**Read-only mounts:** append `,readonly` to keep the container from writing
+back to the host path -- useful for shared reference data or datasets:
+
+```json
+"mounts": [
+    "source=/mnt/c/Users/you/reference-data,target=/workspaces/external/reference-data,type=bind,consistency=cached,readonly"
+]
+```
+
 Then **recreate** (not rebuild) the container:
 
 ```bash
