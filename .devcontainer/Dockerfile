@@ -54,7 +54,10 @@ RUN mkdir -p "$NVM_DIR" && chown -R $USER_UID:$USER_GID "$NVM_DIR"
 USER $USERNAME
 ENV HOME=/home/$USERNAME
 
-RUN curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash && \
+# PROFILE=/dev/null stops the installer from appending its own (unguarded)
+# nvm-sourcing block to .bashrc -- Layer 8 adds the one we actually want.
+RUN export PROFILE=/dev/null && \
+    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash && \
     . "$NVM_DIR/nvm.sh" && \
     nvm install --lts && \
     nvm alias default node && \
@@ -110,10 +113,13 @@ USER $USERNAME
 RUN { \
         echo ''; \
         echo '# DevPod tool paths'; \
-        echo 'export NPM_CONFIG_PREFIX="$HOME/.npm-global"'; \
         echo 'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"'; \
         echo 'export NVM_DIR="/usr/local/share/nvm"'; \
+        echo '# nvm refuses to source while NPM_CONFIG_PREFIX is set -- unset for the'; \
+        echo '# duration of sourcing, then restore it for our custom global installs.'; \
+        echo 'unset NPM_CONFIG_PREFIX'; \
         echo '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"'; \
+        echo 'export NPM_CONFIG_PREFIX="$HOME/.npm-global"'; \
         echo 'if [ -f ~/.bash_aliases ]; then . ~/.bash_aliases; fi'; \
     } >> $HOME/.bashrc
 
