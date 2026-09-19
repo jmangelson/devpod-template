@@ -9,14 +9,19 @@
 # Changing a layer only invalidates that layer and everything below it.
 #
 # LAYER GUIDE:
-#   1  Core system packages (build tools, X stack, Chrome)   — rare
-#   2  Node.js + npm global config                           — rare
-#   3  uv + Python 3.12                                      — rare
-#   4  Python venv + Jupyter                                 — occasional
-#   5  Claude Code                                           — occasional
-#   6  Codex CLI                                             — occasional
-#   7  Personal apt packages                                 — occasional
-#   8  Shell config + dotfiles                               — frequent
+#   1  Core system packages (build tools)                     — rare
+#   2  Node.js + npm global config                            — rare
+#   3  uv + Python 3.12                                       — rare
+#   4  Python venv + Jupyter                                  — occasional
+#   5  Claude Code                                            — occasional
+#   6  Codex CLI                                               — occasional
+#   7  Personal apt packages                                  — occasional
+#   8  GUI stack: Xvfb/noVNC/Chrome — OPTIONAL, off by default — rare
+#   9  Shell config + dotfiles                                — frequent
+#
+# Layer 8 only runs its installs when built with --build-arg ENABLE_GUI=true
+# (see devcontainer.json). Most projects never need an in-container browser,
+# and skipping it keeps images smaller and builds faster.
 # =============================================================================
 
 FROM mcr.microsoft.com/devcontainers/base:ubuntu
@@ -24,26 +29,18 @@ FROM mcr.microsoft.com/devcontainers/base:ubuntu
 ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=1000
+ARG ENABLE_GUI=false
 
 # ── Layer 1: Core system packages ─────────────────────────────────────────────
-# Infrastructure only: build tools, X forwarding stack, Chrome.
-# Only touch this layer for low-level system dependencies.
+# Infrastructure only: build tools. Only touch this layer for low-level
+# system dependencies needed by every project.
 # BuildKit cache mounts keep .deb files on the host so packages aren't
 # re-fetched from the internet on every rebuild.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        curl wget gnupg ca-certificates build-essential \
-        xvfb x11vnc novnc fluxbox x11-utils \
-    && \
-    wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub \
-        | gpg --dearmor -o /etc/apt/trusted.gpg.d/google-chrome.gpg && \
-    echo "deb [arch=amd64] https://dl.google.com/linux/chrome/deb/ stable main" \
-        > /etc/apt/sources.list.d/google-chrome.list && \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        google-chrome-stable
+        curl wget gnupg ca-certificates build-essential
 
 # ── Layer 2: Node.js + npm global config ──────────────────────────────────────
 # Grouped together: npm config is meaningless without Node, and you'd
@@ -109,7 +106,29 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         ripgrep
 USER $USERNAME
 
-# ── Layer 8: Shell config + dotfiles ──────────────────────────────────────────
+# ── Layer 8: GUI stack (optional) ─────────────────────────────────────────────
+# Xvfb/x11vnc/noVNC/fluxbox + Chrome, for projects that drive an in-container
+# browser. Off by default -- the whole install is skipped unless built with
+# --build-arg ENABLE_GUI=true. Placed last among the rarely-changing layers so
+# flipping the flag never invalidates Node/Python/Claude/Codex/apt above.
+USER root
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    if [ "$ENABLE_GUI" = "true" ]; then \
+        apt-get update && \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            xvfb x11vnc novnc fluxbox x11-utils && \
+        wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub \
+            | gpg --dearmor -o /etc/apt/trusted.gpg.d/google-chrome.gpg && \
+        echo "deb [arch=amd64] https://dl.google.com/linux/chrome/deb/ stable main" \
+            > /etc/apt/sources.list.d/google-chrome.list && \
+        apt-get update && \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            google-chrome-stable; \
+    fi
+USER $USERNAME
+
+# ── Layer 9: Shell config + dotfiles ──────────────────────────────────────────
 RUN { \
         echo ''; \
         echo '# DevPod tool paths'; \

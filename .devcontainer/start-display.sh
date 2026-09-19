@@ -5,10 +5,19 @@
 # This is the only thing postCreateCommand runs. Everything else is baked
 # into the Docker image. Adding a mount or recreating the container only
 # reruns this script — it completes in a few seconds.
+#
+# No-ops if the image was built with ENABLE_GUI=false (the default) -- the
+# GUI packages simply aren't installed, so there's nothing to start.
 
 set -e
 
+if ! command -v Xvfb >/dev/null 2>&1; then
+    echo "GUI stack not installed (image built with ENABLE_GUI=false) -- skipping display setup."
+    exit 0
+fi
+
 DISPLAY_NUM=":99"
+NOVNC_PORT="${NOVNC_PORT:-6080}"
 export DISPLAY="$DISPLAY_NUM"
 
 echo "Starting virtual display..."
@@ -36,8 +45,8 @@ if ! pgrep -f "x11vnc .*${DISPLAY_NUM}" >/dev/null 2>&1; then
         >/tmp/devpod-x11vnc.log 2>&1
 fi
 
-if ! pgrep -f "websockify .*6080" >/dev/null 2>&1; then
-    websockify --web=/usr/share/novnc 0.0.0.0:6080 localhost:5900 \
+if ! pgrep -f "websockify .*${NOVNC_PORT}" >/dev/null 2>&1; then
+    websockify --web=/usr/share/novnc 0.0.0.0:"${NOVNC_PORT}" localhost:5900 \
         >/tmp/devpod-websockify.log 2>&1 &
 fi
 
@@ -45,4 +54,4 @@ if ! pgrep -f "fluxbox" >/dev/null 2>&1; then
     DISPLAY="$DISPLAY_NUM" fluxbox >/tmp/devpod-fluxbox.log 2>&1 &
 fi
 
-echo "Display ready — noVNC available on port 6080"
+echo "Display ready — noVNC available on port ${NOVNC_PORT}"

@@ -7,14 +7,16 @@
             "USERNAME": "vscode",
             "USER_UID": "1000",
             "USER_GID": "1000"
+
+            // ── GUI (noVNC) -- optional, off by default ──────────────────
+            // Uncomment to build the in-container Chrome/Xvfb/noVNC stack.
+            // Most projects don't need it -- skip it for a smaller, faster
+            // build. See the "GUI (noVNC)" section below too.
+            // "ENABLE_GUI": "true"
         }
     },
 
     "remoteUser": "vscode",
-
-    "containerEnv": {
-        "DISPLAY": ":99"
-    },
 
     "remoteEnv": {
         "PATH": "/home/vscode/.local/bin:/home/vscode/.npm-global/bin:${containerEnv:PATH}"
@@ -36,10 +38,22 @@
     },
 
     // postCreateCommand only starts the X/VNC daemons — they must be live
-    // processes and can't be baked into the image. Runs in a few seconds.
+    // processes and can't be baked into the image. No-ops instantly if the
+    // GUI stack isn't installed (ENABLE_GUI unset/false). Runs in a few
+    // seconds either way.
     "postCreateCommand": "bash .devcontainer/start-display.sh",
 
-    "forwardPorts": [6080],
+    // ── GUI (noVNC) -- optional, off by default ────────────────────────────────
+    // Only needed for projects that drive an in-container browser. To enable:
+    //   1. Uncomment "ENABLE_GUI": "true" in build.args above.
+    //   2. Uncomment containerEnv and forwardPorts below.
+    //   3. If you run several devpods at once, give NOVNC_PORT/forwardPorts a
+    //      value unique to this project -- devpod forwards the literal port
+    //      number, so two workspaces both using 6080 will conflict.
+    //   4. Rebuild with `devpod up . --recreate`.
+    //
+    // "containerEnv": { "DISPLAY": ":99", "NOVNC_PORT": "6080" },
+    // "forwardPorts": [6080],
 
     // ── External mounts ──────────────────────────────────────────────────────
     // Add project-specific folder mounts here. They are NOT part of the image,

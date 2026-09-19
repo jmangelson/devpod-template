@@ -11,8 +11,9 @@ baked into Docker image layers, so rebuilds only redo work for the layers that
 actually changed.
 
 `postCreateCommand` runs only `start-display.sh` -- a lightweight script that
-starts the Xvfb/VNC/noVNC daemons. These must be live processes (can't be
-baked into an image), but they start in a few seconds.
+starts the Xvfb/VNC/noVNC daemons when the GUI stack is enabled. It no-ops
+instantly otherwise. These must be live processes (can't be baked into an
+image), but they start in a few seconds.
 
 ### Layer structure
 
@@ -21,23 +22,31 @@ layer only invalidates that layer and everything below it.
 
 | # | Contents | Change frequency |
 |---|---|---|
-| 1 | Core system packages: build tools, X stack, Chrome | Rare -- low-level infra only |
+| 1 | Core system packages: build tools | Rare -- low-level infra only |
 | 2 | Node.js + npm global config | Rare -- coupled, always change together |
 | 3 | uv + Python 3.12 | Rare -- coupled, always change together |
 | 4 | Python venv + Jupyter | Occasional -- add base Python packages here |
 | 5 | Claude Code | Occasional |
 | 6 | Codex CLI | Occasional -- separate from Claude, independent cadence |
 | 7 | Personal apt packages: tmux, vim, emacs, ripgrep, ... | Occasional -- **add new tools here** |
-| 8 | Shell config, `.vimrc`, `.bash_aliases` | Frequent |
+| 8 | GUI stack: Xvfb/x11vnc/noVNC/Chrome -- **optional, off by default** | Rare -- only if enabled |
+| 9 | Shell config, `.vimrc`, `.bash_aliases` | Frequent |
 
 **Key design decisions:**
-Layer 1 is infrastructure that almost never changes (Chrome, X stack, build
-tools). Node and npm config are merged (Layer 2) since they're always updated
-together; same for uv and Python (Layer 3). The venv is its own layer (Layer 4)
-so adding Python packages doesn't re-download Python itself. Personal apt tools
-(Layer 7) sit just before shell config so adding `htop` or `jq` leaves
+Layer 1 is infrastructure that almost never changes (build tools). Node and
+npm config are merged (Layer 2) since they're always updated together; same
+for uv and Python (Layer 3). The venv is its own layer (Layer 4) so adding
+Python packages doesn't re-download Python itself. Personal apt tools
+(Layer 7) sit just before the GUI/shell layers so adding `htop` or `jq` leaves
 everything above cached. Both apt layers use BuildKit cache mounts so `.deb`
 files are never re-downloaded from the internet, even on a layer rebuild.
+
+The GUI stack (Layer 8) is gated behind the `ENABLE_GUI` build arg and skipped
+entirely by default -- most projects never drive an in-container browser, and
+skipping it means no Chrome download and a noticeably smaller, faster image.
+It sits last among the rarely-changing layers so toggling it never invalidates
+Node, Python, Claude, Codex, or your personal apt tools. See
+[Chrome GUI (noVNC)](#chrome-gui-novnc-optional) below to enable it.
 
 **Mounts never trigger a rebuild.** They are container-level config, not part
 of the image. Adding or changing a mount only recreates the container (seconds).
@@ -78,6 +87,23 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 Then rebuild. Only Layer 7 and below rebuild -- Node, Python, Claude, and Codex
 all stay cached.
 
+## Enabling the GUI stack
+
+The Chrome/Xvfb/noVNC layer is **off by default**. To enable it for a project:
+
+1. In `devcontainer.json`, uncomment `"ENABLE_GUI": "true"` in `build.args`.
+2. Uncomment `containerEnv` and `forwardPorts` further down in the same file.
+3. If you'll run this alongside other devpods at the same time, change
+   `NOVNC_PORT` (in `containerEnv`) and the matching `forwardPorts` entry to a
+   port unique to this project -- devpod forwards the literal port number, so
+   two workspaces both left on `6080` will conflict.
+4. Rebuild:
+   ```bash
+   devpod up . --recreate --ide vscode
+   ```
+   (`--recreate` is required -- `devpod up` reuses an already-running
+   container and won't notice the Dockerfile/build-arg change otherwise.)
+
 ## Adding external folder mounts
 
 Edit the `mounts` array in `devcontainer.json`:
@@ -112,14 +138,15 @@ The cached image is reused -- the container is ready in seconds.
 | What changed | Layers rebuilt | Time |
 |---|---|---|
 | Mount added/changed | none (recreate only) | ~5 sec |
-| `.vimrc` / `.bash_aliases` / shell config | 8 | ~15 sec |
-| Personal apt package added (tmux, htop, ...) | 7-8 | ~1 min |
-| Claude Code updated | 5-8 | ~1-2 min |
-| Codex CLI updated | 6-8 | ~1-2 min |
-| Python venv packages changed | 4-8 | ~2 min |
-| uv / Python 3.12 version changed | 3-8 | ~3 min |
-| Node / nvm version changed | 2-8 | ~3-4 min |
-| System apt package added (rare) | 1-8 (full rebuild) | ~5-10 min |
+| `.vimrc` / `.bash_aliases` / shell config | 9 | ~15 sec |
+| `ENABLE_GUI` flipped on for the first time | 8-9 | ~2-3 min (Chrome download) |
+| Personal apt package added (tmux, htop, ...) | 7-9 | ~1 min |
+| Claude Code updated | 5-9 | ~1-2 min |
+| Codex CLI updated | 6-9 | ~1-2 min |
+| Python venv packages changed | 4-9 | ~2 min |
+| uv / Python 3.12 version changed | 3-9 | ~3 min |
+| Node / nvm version changed | 2-9 | ~3-4 min |
+| System apt package added (rare) | 1-9 (full rebuild) | ~5-10 min |
 
 ## What's installed
 
@@ -135,22 +162,28 @@ The cached image is reused -- the container is ready in seconds.
 | **ripgrep** | `rg` -- fast grep |
 | **vim** | with personal `.vimrc` |
 | **emacs** | |
-| **Chrome** | for browser GUI via noVNC |
-| **Xvfb / x11vnc / noVNC / Fluxbox** | virtual display + browser access on port 6080 |
+| **Chrome** *(optional)* | for browser GUI via noVNC -- only if `ENABLE_GUI=true` |
+| **Xvfb / x11vnc / noVNC / Fluxbox** *(optional)* | virtual display + browser access -- only if `ENABLE_GUI=true` |
 
 **VS Code extensions:** Python, Ruff, Jupyter, Claude Code, Codex
 
-## Chrome GUI (noVNC)
+## Chrome GUI (noVNC) -- optional
 
-The container starts a virtual display (`:99`) with Fluxbox and exposes it via
-noVNC on forwarded port `6080`. Useful for logging into web interfaces or
-running Chrome-based sessions inside the container.
+Off by default -- see [Enabling the GUI stack](#enabling-the-gui-stack) above.
+Once enabled, the container starts a virtual display (`:99`) with Fluxbox and
+exposes it via noVNC on `NOVNC_PORT` (`6080` unless you changed it). Useful
+for logging into web interfaces or running Chrome-based sessions inside the
+container.
 
-1. DevPod forwards port `6080` automatically.
-2. Open in a browser:
+1. DevPod forwards the configured port automatically.
+2. Open in a browser (substitute your `NOVNC_PORT` if not the default):
    ```
    http://localhost:6080/vnc.html?autoconnect=true&resize=remote
    ```
+
+If you run multiple GUI-enabled devpods at once, give each project a distinct
+`NOVNC_PORT` (and matching `forwardPorts` entry) -- devpod forwards the exact
+port number, so two workspaces both on `6080` will collide.
 
 ## File structure
 
@@ -158,8 +191,8 @@ running Chrome-based sessions inside the container.
 .devcontainer/
 ├── Dockerfile          # Image definition -- all installs live here
 ├── devcontainer.json   # DevPod/VS Code config, extensions, mounts
-├── start-display.sh    # postCreateCommand -- starts Xvfb/VNC/noVNC/Fluxbox
-├── .vimrc              # Copied into the image at build time (Layer 8)
-├── .bash_aliases       # Copied into the image at build time (Layer 8)
+├── start-display.sh    # postCreateCommand -- starts Xvfb/VNC/noVNC/Fluxbox (no-ops if disabled)
+├── .vimrc              # Copied into the image at build time (Layer 9)
+├── .bash_aliases       # Copied into the image at build time (Layer 9)
 └── README.md           # This file
 ```
