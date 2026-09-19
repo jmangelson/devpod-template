@@ -133,6 +133,22 @@ back to the host path -- useful for shared reference data or datasets:
 ]
 ```
 
+**Mixing read-only and read-write:** nest a second mount at a sub-path to make
+just that sub-path writable within an otherwise read-only tree -- e.g.
+read-only access to a large shared dataset, with read-write on one working
+subfolder inside it:
+
+```json
+"mounts": [
+    "source=/mnt/c/Users/you/big-folder,target=/workspaces/external/big-folder,type=bind,consistency=cached,readonly",
+    "source=/mnt/c/Users/you/big-folder/subfolder,target=/workspaces/external/big-folder/subfolder,type=bind,consistency=cached"
+]
+```
+
+Each bind mount is independent at the kernel level, so the more specific
+mount simply shadows that portion of the parent -- everything else under
+`big-folder` stays read-only.
+
 Then **recreate** (not rebuild) the container:
 
 ```bash

@@ -68,5 +68,11 @@
     // Append ",readonly" to mount read-only (e.g. reference data you don't
     // want a stray write inside the container to touch):
     //   "source=/mnt/c/Users/you/reference-data,target=/workspaces/external/reference-data,type=bind,consistency=cached,readonly"
+    //
+    // Mix read-only + read-write within one tree by nesting a second mount at
+    // a sub-path -- it shadows just that sub-path, regardless of the parent's
+    // own read-only flag:
+    //   "source=/mnt/c/Users/you/big-folder,target=/workspaces/external/big-folder,type=bind,consistency=cached,readonly",
+    //   "source=/mnt/c/Users/you/big-folder/subfolder,target=/workspaces/external/big-folder/subfolder,type=bind,consistency=cached"
     "mounts": []
 }
