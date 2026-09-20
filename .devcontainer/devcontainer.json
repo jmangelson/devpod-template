@@ -6,7 +6,13 @@
         "args": {
             "USERNAME": "vscode",
             "USER_UID": "1000",
-            "USER_GID": "1000"
+            "USER_GID": "1000",
+            "ENABLE_LATEX": "false",
+            "ENABLE_DOCKER_IN_DOCKER": "false"
+
+            // ── LaTeX -- optional, off by default ────────────────────────
+            // Set ENABLE_LATEX to true to install texlive-latex-extra and latexmk.
+            // Set ENABLE_DOCKER_IN_DOCKER to true to install docker.io.
 
             // ── GUI (noVNC) -- optional, off by default ──────────────────
             // Uncomment to build the in-container Chrome/Xvfb/noVNC stack.
@@ -17,6 +23,10 @@
     },
 
     "remoteUser": "vscode",
+
+    // Docker-in-Docker requires privileged container access.
+    // Uncomment when ENABLE_DOCKER_IN_DOCKER is true:
+    // "runArgs": ["--privileged"],
 
     "remoteEnv": {
         "PATH": "/home/vscode/.local/bin:/home/vscode/.npm-global/bin:${containerEnv:PATH}"

@@ -15,13 +15,14 @@
 #   4  Python venv + Jupyter                                  — occasional
 #   5  Claude Code                                            — occasional
 #   6  Codex CLI                                               — occasional
-#   7  Personal apt packages                                  — occasional
+#   7  LaTeX toolchain — OPTIONAL, off by default              — rare
 #   8  GUI stack: Xvfb/noVNC/Chrome — OPTIONAL, off by default — rare
-#   9  Shell config + dotfiles                                — frequent
+#   9  Docker-in-Docker — OPTIONAL, off by default              — rare
+#  10  Personal apt packages                                  — occasional
+#  11  Shell config + dotfiles                                — frequent
 #
-# Layer 8 only runs its installs when built with --build-arg ENABLE_GUI=true
-# (see devcontainer.json). Most projects never need an in-container browser,
-# and skipping it keeps images smaller and builds faster.
+# Optional layers run their installs only when enabled with their build args.
+# See devcontainer.json for the available options.
 # =============================================================================
 
 FROM mcr.microsoft.com/devcontainers/base:ubuntu
@@ -29,7 +30,9 @@ FROM mcr.microsoft.com/devcontainers/base:ubuntu
 ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=1000
+ARG ENABLE_LATEX=false
 ARG ENABLE_GUI=false
+ARG ENABLE_DOCKER_IN_DOCKER=false
 
 # ── Layer 1: Core system packages ─────────────────────────────────────────────
 # Infrastructure only: build tools. Only touch this layer for low-level
@@ -52,7 +55,7 @@ USER $USERNAME
 ENV HOME=/home/$USERNAME
 
 # PROFILE=/dev/null stops the installer from appending its own (unguarded)
-# nvm-sourcing block to .bashrc -- Layer 8 adds the one we actually want.
+# nvm-sourcing block to .bashrc -- Layer 11 adds the one we actually want.
 RUN export PROFILE=/dev/null && \
     curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash && \
     . "$NVM_DIR/nvm.sh" && \
@@ -91,19 +94,12 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 # Separate from Claude: independent tool, independent release cadence.
 RUN curl -fsSL https://chatgpt.com/codex/install.sh | sh
 
-# ── Layer 7: Personal apt packages ────────────────────────────────────────────
-# Add everyday tools here. Placed after the AI CLI layers so adding a
-# package (htop, tree, jq, etc.) doesn't invalidate Claude, Codex,
-# Python, or Node. BuildKit cache avoids re-downloading existing packages.
+# ── Layer 7: LaTeX toolchain (optional) ───────────────────────────────────────
+# Off by default — enable with --build-arg ENABLE_LATEX=true. The extra
+# distribution includes the standard LaTeX engines and commonly used packages;
+# latexmk provides convenient dependency-aware builds.
 USER root
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        tmux \
-        vim \
-        emacs \
-        ripgrep
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked if [ "$ENABLE_LATEX" = "true" ]; then apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends texlive-latex-extra latexmk; fi
 USER $USERNAME
 
 # ── Layer 8: GUI stack (optional) ─────────────────────────────────────────────
@@ -128,7 +124,29 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     fi
 USER $USERNAME
 
-# ── Layer 9: Shell config + dotfiles ──────────────────────────────────────────
+# ── Layer 9: Docker-in-Docker (optional) ─────────────────────────────────────
+# Off by default — enable with --build-arg ENABLE_DOCKER_IN_DOCKER=true.
+# docker.io provides both the Docker CLI and inner daemon.
+USER root
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked if [ "$ENABLE_DOCKER_IN_DOCKER" = "true" ]; then apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io && usermod -aG docker "$USERNAME"; fi
+USER $USERNAME
+
+# ── Layer 10: Personal apt packages ────────────────────────────────────────────
+# Add everyday tools here. Placed after the AI CLI layers so adding a
+# package (htop, tree, jq, etc.) doesn't invalidate Claude, Codex,
+# Python, or Node. BuildKit cache avoids re-downloading existing packages.
+USER root
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        tmux \
+        vim \
+        emacs \
+        ripgrep
+USER $USERNAME
+
+# ── Layer 11: Shell config + dotfiles ─────────────────────────────────────────
 RUN { \
         echo ''; \
         echo '# DevPod tool paths'; \
