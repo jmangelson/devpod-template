@@ -97,9 +97,10 @@ RUN curl -fsSL https://chatgpt.com/codex/install.sh | sh
 # ── Layer 7: LaTeX toolchain (optional) ───────────────────────────────────────
 # Off by default — enable with --build-arg ENABLE_LATEX=true. The extra
 # distribution includes the standard LaTeX engines and commonly used packages;
+# texlive-fonts-recommended supplies the Times metrics used by mathptmx, and
 # latexmk provides convenient dependency-aware builds.
 USER root
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked if [ "$ENABLE_LATEX" = "true" ]; then apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends texlive-latex-extra latexmk; fi
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked if [ "$ENABLE_LATEX" = "true" ]; then apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends texlive-latex-extra texlive-fonts-recommended latexmk; fi
 USER $USERNAME
 
 # ── Layer 8: GUI stack (optional) ─────────────────────────────────────────────
