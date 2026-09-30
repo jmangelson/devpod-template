@@ -26,25 +26,38 @@ layer only invalidates that layer and everything below it.
 | 2 | Node.js + npm global config | Rare -- coupled, always change together |
 | 3 | uv + Python 3.12 | Rare -- coupled, always change together |
 | 4 | Python venv + Jupyter | Occasional -- add base Python packages here |
-| 5 | Claude Code | Occasional |
-| 6 | Codex CLI | Occasional -- separate from Claude, independent cadence |
-| 7 | LaTeX toolchain (`texlive-latex-extra`, `latexmk`) -- **optional, off by default** | Rare -- only if enabled |
-| 8 | GUI stack: Xvfb/x11vnc/noVNC/Chrome -- **optional, off by default** | Rare -- only if enabled |
-| 9 | Docker-in-Docker -- **optional, off by default** | Rare -- only if enabled |
-| 10 | Personal apt packages: tmux, vim, emacs, ripgrep, ... | Occasional -- **add new tools here** |
-| 11 | Shell config, `.vimrc`, `.bash_aliases` | Frequent |
+| 5 | Miniforge (conda) | Rare -- for tools/environments that specifically need conda |
+| 6 | Claude Code | Occasional |
+| 7 | Codex CLI | Occasional -- separate from Claude, independent cadence |
+| 8 | LaTeX toolchain (`texlive-latex-extra`, `latexmk`) -- **optional, off by default** | Rare -- only if enabled |
+| 9 | GUI stack: Xvfb/x11vnc/noVNC/Chrome -- **optional, off by default** | Rare -- only if enabled |
+| 10 | Docker-in-Docker -- **optional, off by default** | Rare -- only if enabled |
+| 11 | Personal apt packages: tmux, vim, emacs, ripgrep, ... | Occasional -- **add new tools here** |
+| 12 | Shell config, `.vimrc`, `.bash_aliases` | Frequent |
 
 **Key design decisions:**
 Layer 1 is infrastructure that almost never changes (build tools). Node and
 npm config are merged (Layer 2) since they're always updated together; same
 for uv and Python (Layer 3). The venv is its own layer (Layer 4) so adding
-Python packages doesn't re-download Python itself. The optional LaTeX, GUI, and
-Docker-in-Docker layers (Layers 7-9) sit before the personal apt and shell layers.
-Adding `htop` or `jq` rebuilds Layers 10-11 but leaves everything above cached.
-All apt-install layers use BuildKit cache mounts so `.deb` files are never
+Python packages doesn't re-download Python itself. Conda (Layer 5) is a
+separate, optional interpreter stack via Miniforge -- `uv`/`~/.venv` remains
+the default for everyday Python work and is what VS Code's
+`python.defaultInterpreterPath` points at; conda's base environment is not
+auto-activated, so it only comes into play when you explicitly `conda
+activate`. The optional LaTeX, GUI, and Docker-in-Docker layers (Layers 8-10)
+sit after Claude/Codex and before the personal apt and shell layers. Adding
+`htop` or `jq` rebuilds Layers 11-12 but leaves everything above cached. All
+apt-install layers use BuildKit cache mounts so `.deb` files are never
 re-downloaded from the internet, even on a layer rebuild.
 
-The LaTeX toolchain (Layer 7) is gated behind the `ENABLE_LATEX` build arg and skipped entirely by default. The GUI stack (Layer 8) is gated behind the `ENABLE_GUI` build arg, and Docker-in-Docker (Layer 9) is gated behind `ENABLE_DOCKER_IN_DOCKER`; all are skipped by default. These optional layers sit after the Node, Python, and AI-tool layers, so toggling one preserves Layers 1-6 while rebuilding that layer and everything below it. See [Enabling LaTeX](#enabling-latex), [Docker-in-Docker](#enabling-docker-in-docker), and [Chrome GUI (noVNC)](#chrome-gui-novnc-optional) below to enable them.
+The LaTeX toolchain (Layer 8) is gated behind the `ENABLE_LATEX` build arg and
+skipped entirely by default. The GUI stack (Layer 9) is gated behind the
+`ENABLE_GUI` build arg, and Docker-in-Docker (Layer 10) is gated behind
+`ENABLE_DOCKER_IN_DOCKER`; all are skipped by default. These optional layers
+sit after the Node, Python, conda, and AI-tool layers, so toggling one
+preserves Layers 1-7 while rebuilding that layer and everything below it. See
+[Enabling LaTeX](#enabling-latex), [Docker-in-Docker](#enabling-docker-in-docker),
+and [Chrome GUI (noVNC)](#chrome-gui-novnc-optional) below to enable them.
 
 **Mounts never trigger a rebuild.** They are container-level config, not part
 of the image. Adding or changing a mount only recreates the container (seconds).
@@ -67,10 +80,10 @@ layer cache and are much faster.
 
 ## Adding personal apt packages
 
-Edit **Layer 10** in `Dockerfile`:
+Edit **Layer 11** in `Dockerfile`:
 
 ```dockerfile
-# ── Layer 10: Personal apt packages ──
+# ── Layer 11: Personal apt packages ──
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
@@ -82,7 +95,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         htop       # ← add new packages here
 ```
 
-Then rebuild. Only Layer 10 and below rebuild -- Node, Python, Claude, and Codex
+Then rebuild. Only Layer 11 and below rebuild -- Node, Python, conda, Claude, and Codex
 all stay cached.
 
 ## Enabling the GUI stack
@@ -191,17 +204,18 @@ The cached image is reused -- the container is ready in seconds.
 | What changed | Layers rebuilt | Time |
 |---|---|---|
 | Mount added/changed | none (recreate only) | ~5 sec |
-| `.vimrc` / `.bash_aliases` / shell config | 11 | ~15 sec |
-| `ENABLE_LATEX` flipped on for the first time | 7-11 | several minutes |
-| `ENABLE_GUI` flipped on for the first time | 8-11 | ~2-3 min (Chrome download) |
-| `ENABLE_DOCKER_IN_DOCKER` flipped on for the first time | 9-11 | several minutes |
-| Personal apt package added (tmux, htop, ...) | 10-11 | ~1 min |
-| Claude Code updated | 5-11 | ~1-2 min |
-| Codex CLI updated | 6-11 | ~1-2 min |
-| Python venv packages changed | 4-11 | ~2 min |
-| uv / Python 3.12 version changed | 3-11 | ~3 min |
-| Node / nvm version changed | 2-11 | ~3-4 min |
-| System apt package added (rare) | 1-11 (full rebuild) | ~5-10 min |
+| `.vimrc` / `.bash_aliases` / shell config | 12 | ~15 sec |
+| `ENABLE_LATEX` flipped on for the first time | 8-12 | several minutes |
+| `ENABLE_GUI` flipped on for the first time | 9-12 | ~2-3 min (Chrome download) |
+| `ENABLE_DOCKER_IN_DOCKER` flipped on for the first time | 10-12 | several minutes |
+| Personal apt package added (tmux, htop, ...) | 11-12 | ~1 min |
+| Claude Code updated | 6-12 | ~1-2 min |
+| Codex CLI updated | 7-12 | ~1-2 min |
+| Miniforge/conda changed | 5-12 | ~1 min |
+| Python venv packages changed | 4-12 | ~2 min |
+| uv / Python 3.12 version changed | 3-12 | ~3 min |
+| Node / nvm version changed | 2-12 | ~3-4 min |
+| System apt package added (rare) | 1-12 (full rebuild) | ~5-10 min |
 
 ## What's installed
 
@@ -209,6 +223,7 @@ The cached image is reused -- the container is ready in seconds.
 |---|---|
 | **Node.js** | LTS, via nvm |
 | **Python 3.12** | via `uv`; `~/.venv` virtualenv with Jupyter and the `devpod` kernel |
+| **Miniforge (conda)** | `~/miniforge3`; base env not auto-activated -- `conda activate <env>` to use it |
 | **Git** | latest stable |
 | **GitHub CLI** | `gh` |
 | **Claude Code** | `claude` -- Anthropic official installer |
@@ -242,6 +257,15 @@ If you run multiple GUI-enabled devpods at once, give each project a distinct
 `NOVNC_PORT` (and matching `forwardPorts` entry) -- devpod forwards the exact
 port number, so two workspaces both on `6080` will collide.
 
+**Why noVNC instead of SSH X11 forwarding:** `devpod up`/`devpod ssh` don't go
+through the container's real `sshd` at all -- DevPod deploys its own embedded
+SSH server that runs over the container runtime's exec tunnel, and that
+embedded server has no X11 forwarding support (an
+[open DevPod feature request](https://github.com/loft-sh/devpod/issues/654)
+with an unmerged draft PR as of late 2025). So enabling `X11Forwarding` in the
+container's `sshd_config` has no effect on a normal DevPod connection. noVNC
+(this section) is the supported path to GUI apps from inside the container.
+
 ## File structure
 
 ```
@@ -249,7 +273,7 @@ port number, so two workspaces both on `6080` will collide.
 ├── Dockerfile          # Image definition -- all installs live here
 ├── devcontainer.json   # DevPod/VS Code config, extensions, mounts
 ├── start-display.sh    # postCreateCommand -- starts Xvfb/VNC/noVNC/Fluxbox (no-ops if disabled)
-├── .vimrc              # Copied into the image at build time (Layer 11)
-├── .bash_aliases       # Copied into the image at build time (Layer 11)
+├── .vimrc              # Copied into the image at build time (Layer 12)
+├── .bash_aliases       # Copied into the image at build time (Layer 12)
 └── README.md           # This file
 ```

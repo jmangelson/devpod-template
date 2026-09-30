@@ -13,13 +13,14 @@
 #   2  Node.js + npm global config                            — rare
 #   3  uv + Python 3.12                                       — rare
 #   4  Python venv + Jupyter                                  — occasional
-#   5  Claude Code                                            — occasional
-#   6  Codex CLI                                               — occasional
-#   7  LaTeX toolchain — OPTIONAL, off by default              — rare
-#   8  GUI stack: Xvfb/noVNC/Chrome — OPTIONAL, off by default — rare
-#   9  Docker-in-Docker — OPTIONAL, off by default              — rare
-#  10  Personal apt packages                                  — occasional
-#  11  Shell config + dotfiles                                — frequent
+#   5  Miniforge (conda)                                      — rare
+#   6  Claude Code                                            — occasional
+#   7  Codex CLI                                               — occasional
+#   8  LaTeX toolchain — OPTIONAL, off by default              — rare
+#   9  GUI stack: Xvfb/noVNC/Chrome — OPTIONAL, off by default — rare
+#  10  Docker-in-Docker — OPTIONAL, off by default              — rare
+#  11  Personal apt packages                                  — occasional
+#  12  Shell config + dotfiles                                — frequent
 #
 # Optional layers run their installs only when enabled with their build args.
 # See devcontainer.json for the available options.
@@ -55,7 +56,7 @@ USER $USERNAME
 ENV HOME=/home/$USERNAME
 
 # PROFILE=/dev/null stops the installer from appending its own (unguarded)
-# nvm-sourcing block to .bashrc -- Layer 11 adds the one we actually want.
+# nvm-sourcing block to .bashrc -- Layer 12 adds the one we actually want.
 RUN export PROFILE=/dev/null && \
     curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash && \
     . "$NVM_DIR/nvm.sh" && \
@@ -87,14 +88,29 @@ RUN uv venv $HOME/.venv && \
     uv pip install ipykernel jupyter && \
     python -m ipykernel install --user --name devpod --display-name "Python (DevPod)"
 
-# ── Layer 5: Claude Code ──────────────────────────────────────────────────────
+# ── Layer 5: Miniforge (conda) ────────────────────────────────────────────────
+# conda-forge-based installer -- no Anaconda Inc. ToS/licensing concerns.
+# Kept separate from uv/venv (Layers 3-4): uv remains the default for
+# everyday Python work, conda is there for tools/environments that need it.
+# Base env is NOT auto-activated on shell start, so it never shadows the
+# uv venv or VS Code's python.defaultInterpreterPath.
+ENV CONDA_DIR=$HOME/miniforge3
+RUN curl -fsSL -o /tmp/miniforge.sh \
+        "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh" && \
+    bash /tmp/miniforge.sh -b -p $CONDA_DIR && \
+    rm /tmp/miniforge.sh && \
+    $CONDA_DIR/bin/conda init bash && \
+    $CONDA_DIR/bin/conda config --set auto_activate_base false
+ENV PATH="$CONDA_DIR/bin:$PATH"
+
+# ── Layer 6: Claude Code ──────────────────────────────────────────────────────
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
-# ── Layer 6: Codex CLI ────────────────────────────────────────────────────────
+# ── Layer 7: Codex CLI ────────────────────────────────────────────────────────
 # Separate from Claude: independent tool, independent release cadence.
 RUN curl -fsSL https://chatgpt.com/codex/install.sh | sh
 
-# ── Layer 7: LaTeX toolchain (optional) ───────────────────────────────────────
+# ── Layer 8: LaTeX toolchain (optional) ───────────────────────────────────────
 # Off by default — enable with --build-arg ENABLE_LATEX=true. The extra
 # distribution includes the standard LaTeX engines and commonly used packages;
 # texlive-fonts-recommended supplies the Times metrics used by mathptmx, and
@@ -103,11 +119,11 @@ USER root
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked if [ "$ENABLE_LATEX" = "true" ]; then apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends texlive-latex-extra texlive-fonts-recommended latexmk; fi
 USER $USERNAME
 
-# ── Layer 8: GUI stack (optional) ─────────────────────────────────────────────
+# ── Layer 9: GUI stack (optional) ─────────────────────────────────────────────
 # Xvfb/x11vnc/noVNC/fluxbox + Chrome, for projects that drive an in-container
 # browser. Off by default -- the whole install is skipped unless built with
 # --build-arg ENABLE_GUI=true. Placed last among the rarely-changing layers so
-# flipping the flag never invalidates Node/Python/Claude/Codex/apt above.
+# flipping the flag never invalidates Node/Python/conda/Claude/Codex/apt above.
 USER root
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -125,14 +141,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     fi
 USER $USERNAME
 
-# ── Layer 9: Docker-in-Docker (optional) ─────────────────────────────────────
+# ── Layer 10: Docker-in-Docker (optional) ────────────────────────────────────
 # Off by default — enable with --build-arg ENABLE_DOCKER_IN_DOCKER=true.
 # docker.io provides both the Docker CLI and inner daemon.
 USER root
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked if [ "$ENABLE_DOCKER_IN_DOCKER" = "true" ]; then apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io && usermod -aG docker "$USERNAME"; fi
 USER $USERNAME
 
-# ── Layer 10: Personal apt packages ────────────────────────────────────────────
+# ── Layer 11: Personal apt packages ───────────────────────────────────────────
 # Add everyday tools here. Placed after the AI CLI layers so adding a
 # package (htop, tree, jq, etc.) doesn't invalidate Claude, Codex,
 # Python, or Node. BuildKit cache avoids re-downloading existing packages.
@@ -147,7 +163,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         ripgrep
 USER $USERNAME
 
-# ── Layer 11: Shell config + dotfiles ─────────────────────────────────────────
+# ── Layer 12: Shell config + dotfiles ─────────────────────────────────────────
 RUN { \
         echo ''; \
         echo '# DevPod tool paths'; \
