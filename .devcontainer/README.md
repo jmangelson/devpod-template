@@ -32,8 +32,9 @@ layer only invalidates that layer and everything below it.
 | 8 | LaTeX toolchain (`texlive-latex-extra`, `latexmk`) -- **optional, off by default** | Rare -- only if enabled |
 | 9 | GUI stack: Xvfb/x11vnc/noVNC/Chrome -- **optional, off by default** | Rare -- only if enabled |
 | 10 | Docker-in-Docker -- **optional, off by default** | Rare -- only if enabled |
-| 11 | Personal apt packages: tmux, vim, emacs, ripgrep, ... | Occasional -- **add new tools here** |
-| 12 | Shell config, `.vimrc`, `.bash_aliases` | Frequent |
+| 11 | Android toolchain: JDK, Android SDK/adb, optional emulator, Maestro -- **optional, off by default** | Rare -- only if enabled |
+| 12 | Personal apt packages: tmux, vim, emacs, ripgrep, ... | Occasional -- **add new tools here** |
+| 13 | Shell config, `.vimrc`, `.bash_aliases` | Frequent |
 
 **Key design decisions:**
 Layer 1 is infrastructure that almost never changes (build tools). Node and
@@ -44,20 +45,23 @@ separate, optional interpreter stack via Miniforge -- `uv`/`~/.venv` remains
 the default for everyday Python work and is what VS Code's
 `python.defaultInterpreterPath` points at; conda's base environment is not
 auto-activated, so it only comes into play when you explicitly `conda
-activate`. The optional LaTeX, GUI, and Docker-in-Docker layers (Layers 8-10)
-sit after Claude/Codex and before the personal apt and shell layers. Adding
-`htop` or `jq` rebuilds Layers 11-12 but leaves everything above cached. All
-apt-install layers use BuildKit cache mounts so `.deb` files are never
-re-downloaded from the internet, even on a layer rebuild.
+activate`. The optional LaTeX, GUI, Docker-in-Docker, and Android layers
+(Layers 8-11) sit after Claude/Codex and before the personal apt and shell
+layers. Adding `htop` or `jq` rebuilds Layers 12-13 but leaves everything above
+cached. All apt-install layers use BuildKit cache mounts so `.deb` files are
+never re-downloaded from the internet, even on a layer rebuild.
 
 The LaTeX toolchain (Layer 8) is gated behind the `ENABLE_LATEX` build arg and
 skipped entirely by default. The GUI stack (Layer 9) is gated behind the
-`ENABLE_GUI` build arg, and Docker-in-Docker (Layer 10) is gated behind
-`ENABLE_DOCKER_IN_DOCKER`; all are skipped by default. These optional layers
-sit after the Node, Python, conda, and AI-tool layers, so toggling one
-preserves Layers 1-7 while rebuilding that layer and everything below it. See
+`ENABLE_GUI` build arg, Docker-in-Docker (Layer 10) is gated behind
+`ENABLE_DOCKER_IN_DOCKER`, and Android (Layer 11) is gated behind
+`ENABLE_ANDROID`; all are skipped by default. These optional layers sit after
+the Node, Python, conda, and AI-tool layers, so toggling one preserves Layers
+1-7 while rebuilding that layer and everything below it. See
 [Enabling LaTeX](#enabling-latex), [Docker-in-Docker](#enabling-docker-in-docker),
 and [Chrome GUI (noVNC)](#chrome-gui-novnc-optional) below to enable them.
+The Android emulator and system image are an additional opt-in controlled by
+`ENABLE_ANDROID_EMULATOR`; see [Android development (optional)](#android-development-optional).
 
 **Mounts never trigger a rebuild.** They are container-level config, not part
 of the image. Adding or changing a mount only recreates the container (seconds).
@@ -95,7 +99,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         htop       # ← add new packages here
 ```
 
-Then rebuild. Only Layer 11 and below rebuild -- Node, Python, conda, Claude, and Codex
+Then rebuild. Only Layer 12 and below rebuild -- Node, Python, conda, Claude, and Codex
 all stay cached.
 
 ## Enabling the GUI stack
@@ -127,6 +131,113 @@ The LaTeX toolchain is **off by default**. To enable it for a project:
    (`--recreate` is required -- `devpod up` reuses an already-running container and will not notice the Dockerfile/build-arg change otherwise.)
 
 This installs `texlive-latex-extra` and `latexmk`, including the standard LaTeX engines and commonly used packages.
+
+## Android development (optional)
+
+The Android layer is intended for an Expo/React Native Android project. It
+installs JDK 17, Android SDK command-line tools, `adb`, one Android compile
+platform, Android build tools, and Maestro. It does **not** install React or
+Expo globally; those belong in the application project and are created with
+`npx create-expo-app@latest`.
+
+It also runs `android init` once while building the image. That installs the
+Android CLI agent skill for the detected Claude and Codex installations, so the
+agent can use the Android-specific workflows without repeating setup at every
+container start. The SDK packages are installed with `android sdk install`; the
+deprecated `sdkmanager` command is not used.
+
+Enable the Android build toolchain by changing this build arg in
+`devcontainer.json`:
+
+```json
+"ENABLE_ANDROID": "true"
+```
+
+For an autonomous Android emulator that Claude can drive from the container,
+also enable the emulator and system image:
+
+```json
+"ENABLE_ANDROID_EMULATOR": "true"
+```
+
+The `ANDROID_KVM_GID` build arg and matching `--group-add` run arg must match
+the host's `/dev/kvm` group ID. This workspace uses `993`; check another host
+with `stat -c %g /dev/kvm` and update both values if needed.
+
+An in-container emulator needs host KVM access, not Docker-in-Docker. Uncomment
+the Android `runArgs` near `remoteUser`:
+
+```json
+"runArgs": ["--device=/dev/kvm", "--group-add=993", "--shm-size=2g"]
+```
+
+If Docker-in-Docker is also enabled, combine the arguments into one `runArgs`
+entry rather than defining `runArgs` twice:
+
+```json
+"runArgs": ["--privileged", "--device=/dev/kvm", "--group-add=993", "--shm-size=2g"]
+```
+
+Docker-in-Docker is only needed if the app's development workflow also runs a
+containerized backend, database, or integration-test service. It is not needed
+to build or test an Android app.
+
+Rebuild after changing the build args:
+
+```bash
+devpod up . --recreate --ide vscode
+```
+
+If the image was already built before the Android skill was added, initialize
+the current container once with:
+
+```bash
+android init
+```
+
+Create and start an emulator inside the container:
+
+```bash
+echo no | avdmanager create avd \
+    --force \
+    --name devpod-api35 \
+    --package "system-images;android-35;google_apis;x86_64"
+
+emulator -avd devpod-api35 -no-window -no-audio -no-boot-anim \
+    >/tmp/devpod-emulator.log 2>&1 &
+adb wait-for-device
+adb devices
+```
+
+The existing GUI/noVNC layer is not required for a headless emulator. Enable
+it only if you want to watch the emulator visually; automated tests can use
+`adb`, Maestro, logs, and screenshots without noVNC.
+
+### Proposed Claude development pipeline
+
+The intended loop is:
+
+1. Claude receives a feature request and edits the Expo/React Native project.
+2. Claude runs linting, TypeScript checks, and unit tests.
+3. Claude starts Metro with `npx expo start`.
+4. Claude builds the native app with `npx expo run:android` when the native
+   project or native dependencies change. For JavaScript/TypeScript-only
+   changes, Metro/Fast Refresh avoids a full native rebuild.
+5. Claude runs Maestro flows in `.maestro/` to launch the app, tap controls,
+   enter data, assert visible text, and capture screenshots.
+6. Claude reads the test output and iterates until the checks pass.
+7. A human reviews the feature on a real Android phone before release.
+
+Typical commands after the first native build are:
+
+```bash
+npx expo start
+maestro test --test-output-dir=build/maestro-results .maestro
+```
+
+For a production release, use EAS Build to create an Android App Bundle for
+Google Play or an APK for direct installation. Keep signing credentials and
+service tokens outside the repository.
 
 ## Enabling Docker-in-Docker
 
@@ -204,18 +315,20 @@ The cached image is reused -- the container is ready in seconds.
 | What changed | Layers rebuilt | Time |
 |---|---|---|
 | Mount added/changed | none (recreate only) | ~5 sec |
-| `.vimrc` / `.bash_aliases` / shell config | 12 | ~15 sec |
-| `ENABLE_LATEX` flipped on for the first time | 8-12 | several minutes |
-| `ENABLE_GUI` flipped on for the first time | 9-12 | ~2-3 min (Chrome download) |
-| `ENABLE_DOCKER_IN_DOCKER` flipped on for the first time | 10-12 | several minutes |
-| Personal apt package added (tmux, htop, ...) | 11-12 | ~1 min |
-| Claude Code updated | 6-12 | ~1-2 min |
-| Codex CLI updated | 7-12 | ~1-2 min |
-| Miniforge/conda changed | 5-12 | ~1 min |
-| Python venv packages changed | 4-12 | ~2 min |
-| uv / Python 3.12 version changed | 3-12 | ~3 min |
-| Node / nvm version changed | 2-12 | ~3-4 min |
-| System apt package added (rare) | 1-12 (full rebuild) | ~5-10 min |
+| `.vimrc` / `.bash_aliases` / shell config | 13 | ~15 sec |
+| `ENABLE_LATEX` flipped on for the first time | 8-13 | several minutes |
+| `ENABLE_GUI` flipped on for the first time | 9-13 | ~2-3 min (Chrome download) |
+| `ENABLE_DOCKER_IN_DOCKER` flipped on for the first time | 10-13 | several minutes |
+| `ENABLE_ANDROID` flipped on for the first time | 11-13 | several minutes (SDK download) |
+| `ENABLE_ANDROID_EMULATOR` flipped on for the first time | 11-13 | longer (emulator image download) |
+| Personal apt package added (tmux, htop, ...) | 12-13 | ~1 min |
+| Claude Code updated | 6-13 | ~1-2 min |
+| Codex CLI updated | 7-13 | ~1-2 min |
+| Miniforge/conda changed | 5-13 | ~1 min |
+| Python venv packages changed | 4-13 | ~2 min |
+| uv / Python 3.12 version changed | 3-13 | ~3 min |
+| Node / nvm version changed | 2-13 | ~3-4 min |
+| System apt package added (rare) | 1-13 (full rebuild) | ~5-10 min |
 
 ## What's installed
 
@@ -236,6 +349,10 @@ The cached image is reused -- the container is ready in seconds.
 | **Docker** *(optional)* | `docker.io` CLI and daemon -- only if `ENABLE_DOCKER_IN_DOCKER=true` |
 | **Chrome** *(optional)* | for browser GUI via noVNC -- only if `ENABLE_GUI=true` |
 | **Xvfb / x11vnc / noVNC / Fluxbox** *(optional)* | virtual display + browser access -- only if `ENABLE_GUI=true` |
+| **JDK 17** *(optional)* | Android/Gradle builds and Maestro -- only if `ENABLE_ANDROID=true` |
+| **Android SDK** *(optional)* | command-line tools, platform-tools/`adb`, API platform, and build tools -- only if `ENABLE_ANDROID=true` |
+| **Android Emulator** *(optional)* | headless emulator plus API 35 Google APIs image -- only if `ENABLE_ANDROID_EMULATOR=true` |
+| **Maestro** *(optional)* | Android end-to-end UI tests and screenshots -- only if `ENABLE_ANDROID=true` |
 
 **VS Code extensions:** Python, Ruff, Jupyter, Claude Code, Codex
 

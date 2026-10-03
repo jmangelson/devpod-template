@@ -8,7 +8,15 @@
             "USER_UID": "1000",
             "USER_GID": "1000",
             "ENABLE_LATEX": "false",
-            "ENABLE_DOCKER_IN_DOCKER": "false"
+            "ENABLE_DOCKER_IN_DOCKER": "false",
+            "ENABLE_ANDROID": "false",
+            "ENABLE_ANDROID_EMULATOR": "false",
+            "ANDROID_CMDLINE_TOOLS_VERSION": "15859902",
+            "ANDROID_PLATFORM": "android-35",
+            "ANDROID_BUILD_TOOLS": "36.0.0",
+            "ANDROID_SYSTEM_IMAGE": "system-images;android-35;google_apis;x86_64",
+            "ANDROID_KVM_GID": "993",
+            "MAESTRO_VERSION": ""
 
             // ── LaTeX -- optional, off by default ────────────────────────
             // Set ENABLE_LATEX to true to install texlive-latex-extra and latexmk.
@@ -27,6 +35,10 @@
     // Docker-in-Docker requires privileged container access.
     // Uncomment when ENABLE_DOCKER_IN_DOCKER is true:
     // "runArgs": ["--privileged"],
+
+    // The Android emulator requires host KVM access and extra shared memory.
+    // Uncomment when ENABLE_ANDROID_EMULATOR is true:
+    // "runArgs": ["--device=/dev/kvm", "--group-add=993", "--shm-size=2g"],
 
     "remoteEnv": {
         "PATH": "/home/vscode/.local/bin:/home/vscode/.npm-global/bin:${containerEnv:PATH}"

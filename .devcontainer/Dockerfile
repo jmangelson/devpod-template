@@ -19,8 +19,9 @@
 #   8  LaTeX toolchain — OPTIONAL, off by default              — rare
 #   9  GUI stack: Xvfb/noVNC/Chrome — OPTIONAL, off by default — rare
 #  10  Docker-in-Docker — OPTIONAL, off by default              — rare
-#  11  Personal apt packages                                  — occasional
-#  12  Shell config + dotfiles                                — frequent
+#  11  Android toolchain — OPTIONAL, off by default             — rare
+#  12  Personal apt packages                                  — occasional
+#  13  Shell config + dotfiles                                — frequent
 #
 # Optional layers run their installs only when enabled with their build args.
 # See devcontainer.json for the available options.
@@ -34,6 +35,14 @@ ARG USER_GID=1000
 ARG ENABLE_LATEX=false
 ARG ENABLE_GUI=false
 ARG ENABLE_DOCKER_IN_DOCKER=false
+ARG ENABLE_ANDROID=false
+ARG ENABLE_ANDROID_EMULATOR=false
+ARG ANDROID_CMDLINE_TOOLS_VERSION=15859902
+ARG ANDROID_PLATFORM=android-35
+ARG ANDROID_BUILD_TOOLS=36.0.0
+ARG ANDROID_SYSTEM_IMAGE=system-images;android-35;google_apis;x86_64
+ARG ANDROID_KVM_GID=993
+ARG MAESTRO_VERSION=
 
 # ── Layer 1: Core system packages ─────────────────────────────────────────────
 # Infrastructure only: build tools. Only touch this layer for low-level
@@ -56,7 +65,7 @@ USER $USERNAME
 ENV HOME=/home/$USERNAME
 
 # PROFILE=/dev/null stops the installer from appending its own (unguarded)
-# nvm-sourcing block to .bashrc -- Layer 12 adds the one we actually want.
+# nvm-sourcing block to .bashrc -- Layer 13 adds the one we actually want.
 RUN export PROFILE=/dev/null && \
     curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash && \
     . "$NVM_DIR/nvm.sh" && \
@@ -148,7 +157,86 @@ USER root
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked --mount=type=cache,target=/var/lib/apt,sharing=locked if [ "$ENABLE_DOCKER_IN_DOCKER" = "true" ]; then apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends docker.io && usermod -aG docker "$USERNAME"; fi
 USER $USERNAME
 
-# ── Layer 11: Personal apt packages ───────────────────────────────────────────
+# ── Layer 11: Android toolchain (optional) ────────────────────────────────────
+# Installs a headless Android development toolchain for Expo/React Native:
+# JDK 17, Android SDK command-line tools, platform tools/adb, one compile
+# platform, build tools, and Maestro for device-level UI tests. The Android CLI
+# (the replacement for deprecated sdkmanager) installs the SDK packages. The
+# emulator package and system image are included only when
+# ENABLE_ANDROID_EMULATOR=true.
+# Docker-in-Docker is not required for this layer; an in-container emulator
+# needs host KVM access instead (see devcontainer.json and README.md).
+USER root
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV ANDROID_HOME=/opt/android-sdk
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV PATH=/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/opt/android-sdk/emulator:$PATH
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    if [ "$ENABLE_ANDROID" = "true" ]; then \
+        apt-get update && \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            openjdk-17-jdk-headless \
+            unzip \
+            libasound2t64 \
+            libdbus-1-3 \
+            libfontconfig1 \
+            libgl1 \
+            libglu1-mesa \
+            libxkbfile1 \
+            libnss3 \
+            libpulse0 \
+            libx11-6 \
+            libxcomposite1 \
+            libxcursor1 \
+            libxdamage1 \
+            libxfixes3 \
+            libxi6 \
+            libxrandr2 \
+            libxtst6 && \
+        mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/latest" /tmp/android-cmdline-tools && \
+        curl -fsSL "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS_VERSION}_latest.zip" \
+            -o /tmp/android-cmdline-tools.zip && \
+        unzip -q /tmp/android-cmdline-tools.zip -d /tmp/android-cmdline-tools && \
+        mv /tmp/android-cmdline-tools/cmdline-tools/* "$ANDROID_SDK_ROOT/cmdline-tools/latest/"; \
+    fi
+RUN if [ "$ENABLE_ANDROID" = "true" ]; then \
+        ANDROID_CLI="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/android" && \
+        yes | "$ANDROID_CLI" sdk install \
+            "platform-tools" \
+            "platforms/${ANDROID_PLATFORM}" \
+            "build-tools/${ANDROID_BUILD_TOOLS}" \
+            $(if [ "$ENABLE_ANDROID_EMULATOR" = "true" ]; then printf '%s\n' emulator "system-images/${ANDROID_PLATFORM}/google_apis/x86_64"; fi) && \
+        find "$ANDROID_SDK_ROOT" -type f -perm -u+x -exec chmod a+rx {} + && \
+        chown -R "$USER_UID:$USER_GID" "$ANDROID_SDK_ROOT"; \
+        if [ "$ENABLE_ANDROID_EMULATOR" = "true" ]; then \
+            if getent group "$ANDROID_KVM_GID" >/dev/null; then \
+                KVM_GROUP="$(getent group "$ANDROID_KVM_GID" | cut -d: -f1)"; \
+            else \
+                groupadd --system --gid "$ANDROID_KVM_GID" kvm; \
+                KVM_GROUP=kvm; \
+            fi; \
+            usermod -aG "$KVM_GROUP" "$USERNAME"; \
+        fi; \
+    fi
+USER $USERNAME
+RUN if [ "$ENABLE_ANDROID" = "true" ]; then \
+        mkdir -p "$HOME/.android"; \
+    fi
+USER root
+RUN if [ "$ENABLE_ANDROID" = "true" ]; then \
+        chown -R "$USER_UID:$USER_GID" "/home/$USERNAME/.android"; \
+    fi
+USER $USERNAME
+RUN if [ "$ENABLE_ANDROID" = "true" ]; then \
+        android init; \
+    fi
+RUN if [ "$ENABLE_ANDROID" = "true" ]; then \
+        if [ -n "$MAESTRO_VERSION" ]; then export MAESTRO_VERSION; fi; \
+        curl -fsSL "https://get.maestro.mobile.dev" | bash; \
+    fi
+
+# ── Layer 12: Personal apt packages ────────────────────────────────────────────
 # Add everyday tools here. Placed after the AI CLI layers so adding a
 # package (htop, tree, jq, etc.) doesn't invalidate Claude, Codex,
 # Python, or Node. BuildKit cache avoids re-downloading existing packages.
@@ -163,12 +251,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         ripgrep
 USER $USERNAME
 
-# ── Layer 12: Shell config + dotfiles ─────────────────────────────────────────
+# ── Layer 13: Shell config + dotfiles ─────────────────────────────────────────
 RUN { \
         echo ''; \
         echo '# DevPod tool paths'; \
-        echo 'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"'; \
+        echo 'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.maestro/bin:$PATH"'; \
         echo 'export NVM_DIR="/usr/local/share/nvm"'; \
+        echo 'export JAVA_HOME="${JAVA_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}"'; \
+        echo 'export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"'; \
         echo '# nvm refuses to source while NPM_CONFIG_PREFIX is set -- unset for the'; \
         echo '# duration of sourcing, then restore it for our custom global installs.'; \
         echo 'unset NPM_CONFIG_PREFIX'; \
