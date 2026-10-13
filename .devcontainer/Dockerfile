@@ -166,6 +166,9 @@ USER $USERNAME
 # ENABLE_ANDROID_EMULATOR=true.
 # Docker-in-Docker is not required for this layer; an in-container emulator
 # needs host KVM access instead (see devcontainer.json and README.md).
+# JDK 17 is JAVA_HOME (Gradle/Android). A JDK 21 runtime is also installed and
+# becomes the default `java` on PATH, because the Firebase Local Emulator Suite
+# requires Java 21+.
 USER root
 ENV ANDROID_SDK_ROOT=/opt/android-sdk
 ENV ANDROID_HOME=/opt/android-sdk
@@ -177,6 +180,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         apt-get update && \
         DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             openjdk-17-jdk-headless \
+            openjdk-21-jre-headless \
             unzip \
             libasound2t64 \
             libdbus-1-3 \

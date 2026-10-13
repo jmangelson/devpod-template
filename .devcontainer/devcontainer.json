@@ -59,11 +59,10 @@
         }
     },
 
-    // postCreateCommand only starts the X/VNC daemons — they must be live
-    // processes and can't be baked into the image. No-ops instantly if the
-    // GUI stack isn't installed (ENABLE_GUI unset/false). Runs in a few
-    // seconds either way.
-    "postCreateCommand": "bash .devcontainer/start-display.sh",
+    // postCreateCommand repairs Android SDK ownership after DevPod remaps the
+    // remote user's UID, then starts the X/VNC daemons. Both no-op instantly
+    // when their optional layer is disabled.
+    "postCreateCommand": "bash .devcontainer/fix-android-sdk-owner.sh && bash .devcontainer/start-display.sh",
 
     // ── GUI (noVNC) -- optional, off by default ────────────────────────────────
     // Only needed for projects that drive an in-container browser. To enable:

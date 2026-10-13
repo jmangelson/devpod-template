@@ -135,10 +135,11 @@ This installs `texlive-latex-extra` and `latexmk`, including the standard LaTeX 
 ## Android development (optional)
 
 The Android layer is intended for an Expo/React Native Android project. It
-installs JDK 17, Android SDK command-line tools, `adb`, one Android compile
-platform, Android build tools, and Maestro. It does **not** install React or
-Expo globally; those belong in the application project and are created with
-`npx create-expo-app@latest`.
+installs JDK 17 (`JAVA_HOME`, for Gradle) plus a Java 21 runtime (default
+`java`, for Firebase emulators), Android SDK command-line tools, `adb`, one
+Android compile platform, Android build tools, and Maestro. It does **not**
+install React or Expo globally; those belong in the application project and
+are created with `npx create-expo-app@latest`.
 
 It also runs `android init` once while building the image. That installs the
 Android CLI agent skill for the detected Claude and Codex installations, so the
@@ -188,6 +189,18 @@ Rebuild after changing the build args:
 devpod up . --recreate --ide vscode
 ```
 
+DevPod can remap the remote user's UID to match the host user when it creates
+the container, which can leave `/opt/android-sdk` owned by the image's
+build-time UID. Gradle then fails with "The SDK directory is not writable"
+when a project needs an SDK package that is not preinstalled, such as the NDK
+or CMake. `postCreateCommand` runs `fix-android-sdk-owner.sh` to re-own the
+SDK for the remote user. To apply it to an existing container without
+recreating it:
+
+```bash
+bash .devcontainer/fix-android-sdk-owner.sh
+```
+
 If the image was already built before the Android skill was added, initialize
 the current container once with:
 
@@ -198,16 +211,17 @@ android init
 Create and start an emulator inside the container:
 
 ```bash
-echo no | avdmanager create avd \
-    --force \
-    --name devpod-api35 \
-    --package "system-images;android-35;google_apis;x86_64"
-
-emulator -avd devpod-api35 -no-window -no-audio -no-boot-anim \
-    >/tmp/devpod-emulator.log 2>&1 &
-adb wait-for-device
-adb devices
+bash .devcontainer/start-emulator.sh
 ```
+
+The script creates `devpod-api35` if needed, gives it 4 GB of RAM, cold-boots
+it, and waits for Android to finish booting. It skips an emulator that is
+already running. Set `EMULATOR_COUNT=2` to start `devpod-api35` and
+`devpod-api35-2` for parallel device testing; two emulators require roughly
+8 GB of available host memory before accounting for Gradle and the container.
+`EMULATOR_RAM_MB` overrides the per-emulator memory. Emulator logs are written
+to `/tmp/devpod-emulator.log` and the AVDs live under `~/.android/avd/`, not in
+the image.
 
 The existing GUI/noVNC layer is not required for a headless emulator. Enable
 it only if you want to watch the emulator visually; automated tests can use
@@ -349,7 +363,7 @@ The cached image is reused -- the container is ready in seconds.
 | **Docker** *(optional)* | `docker.io` CLI and daemon -- only if `ENABLE_DOCKER_IN_DOCKER=true` |
 | **Chrome** *(optional)* | for browser GUI via noVNC -- only if `ENABLE_GUI=true` |
 | **Xvfb / x11vnc / noVNC / Fluxbox** *(optional)* | virtual display + browser access -- only if `ENABLE_GUI=true` |
-| **JDK 17** *(optional)* | Android/Gradle builds and Maestro -- only if `ENABLE_ANDROID=true` |
+| **JDK 17 + Java 21 runtime** *(optional)* | Android/Gradle builds and Maestro (17, `JAVA_HOME`); Firebase emulators (21, default `java`) -- only if `ENABLE_ANDROID=true` |
 | **Android SDK** *(optional)* | command-line tools, platform-tools/`adb`, API platform, and build tools -- only if `ENABLE_ANDROID=true` |
 | **Android Emulator** *(optional)* | headless emulator plus API 35 Google APIs image -- only if `ENABLE_ANDROID_EMULATOR=true` |
 | **Maestro** *(optional)* | Android end-to-end UI tests and screenshots -- only if `ENABLE_ANDROID=true` |
@@ -390,7 +404,9 @@ container's `sshd_config` has no effect on a normal DevPod connection. noVNC
 ├── Dockerfile          # Image definition -- all installs live here
 ├── devcontainer.json   # DevPod/VS Code config, extensions, mounts
 ├── start-display.sh    # postCreateCommand -- starts Xvfb/VNC/noVNC/Fluxbox (no-ops if disabled)
-├── .vimrc              # Copied into the image at build time (Layer 12)
-├── .bash_aliases       # Copied into the image at build time (Layer 12)
+├── fix-android-sdk-owner.sh # Repairs SDK ownership after UID remapping
+├── start-emulator.sh   # Creates and cold-boots one or more Android AVDs
+├── .vimrc              # Copied into the image at build time (Layer 13)
+├── .bash_aliases       # Copied into the image at build time (Layer 13)
 └── README.md           # This file
 ```
