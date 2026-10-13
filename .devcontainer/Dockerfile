@@ -20,12 +20,11 @@
 #   9  GUI stack: Xvfb/noVNC/Chrome — OPTIONAL, off by default — rare
 #  10  Docker-in-Docker — OPTIONAL, off by default              — rare
 #  11  Android toolchain — OPTIONAL, off by default             — rare
-#  12  WeasyPrint HTML->PDF — OPTIONAL, ON by default         — rare
+#  12  WeasyPrint HTML->PDF — OPTIONAL                       — rare
 #  13  Personal apt packages                                  — occasional
 #  14  Shell config + dotfiles                                — frequent
 #
-# Optional layers run their installs only when enabled with their build args
-# (all off by default except WeasyPrint).
+# Optional layers run their installs only when enabled with their build args.
 # See devcontainer.json for the available options.
 # =============================================================================
 
@@ -39,7 +38,7 @@ ARG ENABLE_GUI=false
 ARG ENABLE_DOCKER_IN_DOCKER=false
 ARG ENABLE_ANDROID=false
 ARG ENABLE_ANDROID_EMULATOR=false
-ARG ENABLE_WEASYPRINT=true
+ARG ENABLE_WEASYPRINT=false
 ARG ANDROID_CMDLINE_TOOLS_VERSION=15859902
 ARG ANDROID_PLATFORM=android-35
 ARG ANDROID_BUILD_TOOLS=36.0.0
@@ -244,7 +243,7 @@ RUN if [ "$ENABLE_ANDROID" = "true" ]; then \
     fi
 
 # ── Layer 12: WeasyPrint HTML->PDF (optional) ────────────────────────────────
-# On by default — disable with --build-arg ENABLE_WEASYPRINT=false.
+# Controlled by ENABLE_WEASYPRINT in devcontainer.json.
 # Pango/HarfBuzz are WeasyPrint's native text-layout dependencies. Fonts:
 # ttf-mscorefonts-installer provides genuine Times New Roman/Arial (needed for
 # documents with font requirements, e.g. NSF letters); fonts-liberation adds

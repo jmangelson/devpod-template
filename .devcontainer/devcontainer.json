@@ -22,8 +22,8 @@
             // ── LaTeX -- optional, off by default ────────────────────────
             // Set ENABLE_LATEX to true to install texlive-latex-extra and latexmk.
             // Set ENABLE_DOCKER_IN_DOCKER to true to install docker.io.
-            // ENABLE_WEASYPRINT (on by default) installs WeasyPrint (HTML->PDF)
-            // plus Pango and fonts, including Times New Roman. Set false to skip.
+            // ENABLE_WEASYPRINT installs WeasyPrint (HTML->PDF) plus Pango and
+            // fonts, including Times New Roman. Set to false to skip it.
 
             // ── GUI (noVNC) -- optional, off by default ──────────────────
             // Uncomment to build the in-container Chrome/Xvfb/noVNC stack.

@@ -33,7 +33,7 @@ layer only invalidates that layer and everything below it.
 | 9 | GUI stack: Xvfb/x11vnc/noVNC/Chrome -- **optional, off by default** | Rare -- only if enabled |
 | 10 | Docker-in-Docker -- **optional, off by default** | Rare -- only if enabled |
 | 11 | Android toolchain: JDK, Android SDK/adb, optional emulator, Maestro -- **optional, off by default** | Rare -- only if enabled |
-| 12 | WeasyPrint HTML->PDF + Pango + fonts (incl. Times New Roman) -- **optional, on by default** | Rare |
+| 12 | WeasyPrint HTML->PDF + Pango + fonts (incl. Times New Roman) -- **optional, on in `devcontainer.json`** | Rare |
 | 13 | Personal apt packages: tmux, vim, emacs, ripgrep, ... | Occasional -- **add new tools here** |
 | 14 | Shell config, `.vimrc`, `.bash_aliases` | Frequent |
 
@@ -57,7 +57,7 @@ skipped entirely by default. The GUI stack (Layer 9) is gated behind the
 `ENABLE_GUI` build arg, Docker-in-Docker (Layer 10) is gated behind
 `ENABLE_DOCKER_IN_DOCKER`, Android (Layer 11) is gated behind
 `ENABLE_ANDROID`; these are skipped by default. WeasyPrint (Layer 12) is
-gated behind `ENABLE_WEASYPRINT` and is **on** by default. These optional layers sit after
+gated behind `ENABLE_WEASYPRINT`, which `devcontainer.json` sets to `true`. These optional layers sit after
 the Node, Python, conda, and AI-tool layers, so toggling one preserves Layers
 1-7 while rebuilding that layer and everything below it. See
 [Enabling LaTeX](#enabling-latex), [Enabling WeasyPrint](#enabling-weasyprint), [Docker-in-Docker](#enabling-docker-in-docker),
@@ -136,7 +136,8 @@ This installs `texlive-latex-extra` and `latexmk`, including the standard LaTeX 
 
 ## Enabling WeasyPrint
 
-WeasyPrint (HTML/CSS -> PDF) is **on by default**. To disable it for a project:
+WeasyPrint (HTML/CSS -> PDF) is **on**: `devcontainer.json` sets `"ENABLE_WEASYPRINT": "true"`.
+That is the only place to change it. To disable it for a project:
 
 1. In `devcontainer.json`, change `"ENABLE_WEASYPRINT": "true"` to `"ENABLE_WEASYPRINT": "false"` in `build.args`.
 2. Rebuild:
@@ -359,7 +360,7 @@ The cached image is reused -- the container is ready in seconds.
 | `ENABLE_DOCKER_IN_DOCKER` flipped on for the first time | 10-14 | several minutes |
 | `ENABLE_ANDROID` flipped on for the first time | 11-14 | several minutes (SDK download) |
 | `ENABLE_ANDROID_EMULATOR` flipped on for the first time | 11-14 | longer (emulator image download) |
-| `ENABLE_WEASYPRINT` flipped on (default) for the first time | 12-14 | ~1-2 min (font download) |
+| `ENABLE_WEASYPRINT` flipped on for the first time | 12-14 | ~1-2 min (font download) |
 | Personal apt package added (tmux, htop, ...) | 13-14 | ~1 min |
 | Claude Code updated | 6-14 | ~1-2 min |
 | Codex CLI updated | 7-14 | ~1-2 min |
@@ -392,7 +393,7 @@ The cached image is reused -- the container is ready in seconds.
 | **Android SDK** *(optional)* | command-line tools, platform-tools/`adb`, API platform, and build tools -- only if `ENABLE_ANDROID=true` |
 | **Android Emulator** *(optional)* | headless emulator plus API 35 Google APIs image -- only if `ENABLE_ANDROID_EMULATOR=true` |
 | **Maestro** *(optional)* | Android end-to-end UI tests and screenshots -- only if `ENABLE_ANDROID=true` |
-| **WeasyPrint** *(optional)* | `weasyprint` HTML->PDF CLI + Python package, Pango, Times New Roman/Liberation/DejaVu fonts -- on by default (`ENABLE_WEASYPRINT=true`) |
+| **WeasyPrint** *(optional)* | `weasyprint` HTML->PDF CLI + Python package, Pango, Times New Roman/Liberation/DejaVu fonts -- on via `ENABLE_WEASYPRINT` in `devcontainer.json` |
 
 **VS Code extensions:** Python, Ruff, Jupyter, Claude Code, Codex
 
