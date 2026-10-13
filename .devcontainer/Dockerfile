@@ -20,10 +20,12 @@
 #   9  GUI stack: Xvfb/noVNC/Chrome — OPTIONAL, off by default — rare
 #  10  Docker-in-Docker — OPTIONAL, off by default              — rare
 #  11  Android toolchain — OPTIONAL, off by default             — rare
-#  12  Personal apt packages                                  — occasional
-#  13  Shell config + dotfiles                                — frequent
+#  12  WeasyPrint HTML->PDF — OPTIONAL, ON by default         — rare
+#  13  Personal apt packages                                  — occasional
+#  14  Shell config + dotfiles                                — frequent
 #
-# Optional layers run their installs only when enabled with their build args.
+# Optional layers run their installs only when enabled with their build args
+# (all off by default except WeasyPrint).
 # See devcontainer.json for the available options.
 # =============================================================================
 
@@ -37,6 +39,7 @@ ARG ENABLE_GUI=false
 ARG ENABLE_DOCKER_IN_DOCKER=false
 ARG ENABLE_ANDROID=false
 ARG ENABLE_ANDROID_EMULATOR=false
+ARG ENABLE_WEASYPRINT=true
 ARG ANDROID_CMDLINE_TOOLS_VERSION=15859902
 ARG ANDROID_PLATFORM=android-35
 ARG ANDROID_BUILD_TOOLS=36.0.0
@@ -65,7 +68,7 @@ USER $USERNAME
 ENV HOME=/home/$USERNAME
 
 # PROFILE=/dev/null stops the installer from appending its own (unguarded)
-# nvm-sourcing block to .bashrc -- Layer 13 adds the one we actually want.
+# nvm-sourcing block to .bashrc -- Layer 14 adds the one we actually want.
 RUN export PROFILE=/dev/null && \
     curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash && \
     . "$NVM_DIR/nvm.sh" && \
@@ -240,7 +243,40 @@ RUN if [ "$ENABLE_ANDROID" = "true" ]; then \
         curl -fsSL "https://get.maestro.mobile.dev" | bash; \
     fi
 
-# ── Layer 12: Personal apt packages ────────────────────────────────────────────
+# ── Layer 12: WeasyPrint HTML->PDF (optional) ────────────────────────────────
+# On by default — disable with --build-arg ENABLE_WEASYPRINT=false.
+# Pango/HarfBuzz are WeasyPrint's native text-layout dependencies. Fonts:
+# ttf-mscorefonts-installer provides genuine Times New Roman/Arial (needed for
+# documents with font requirements, e.g. NSF letters); fonts-liberation adds
+# metric-compatible fallbacks and fonts-dejavu-core a broad-coverage default.
+# WeasyPrint itself goes in the uv venv (importable from Python) and its CLI
+# is symlinked into ~/.local/bin so `weasyprint` is on PATH everywhere.
+USER root
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    if [ "$ENABLE_WEASYPRINT" = "true" ]; then \
+        echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" \
+            | debconf-set-selections && \
+        apt-get update && \
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            libpango-1.0-0 \
+            libpangoft2-1.0-0 \
+            libharfbuzz-subset0 \
+            fontconfig \
+            fonts-dejavu-core \
+            fonts-liberation \
+            ttf-mscorefonts-installer && \
+        fc-cache -f; \
+    fi
+USER $USERNAME
+RUN if [ "$ENABLE_WEASYPRINT" = "true" ]; then \
+        . $HOME/.venv/bin/activate && \
+        uv pip install weasyprint && \
+        ln -sf $HOME/.venv/bin/weasyprint $HOME/.local/bin/weasyprint && \
+        weasyprint --info; \
+    fi
+
+# ── Layer 13: Personal apt packages ────────────────────────────────────────────
 # Add everyday tools here. Placed after the AI CLI layers so adding a
 # package (htop, tree, jq, etc.) doesn't invalidate Claude, Codex,
 # Python, or Node. BuildKit cache avoids re-downloading existing packages.
@@ -255,7 +291,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         ripgrep
 USER $USERNAME
 
-# ── Layer 13: Shell config + dotfiles ─────────────────────────────────────────
+# ── Layer 14: Shell config + dotfiles ─────────────────────────────────────────
 RUN { \
         echo ''; \
         echo '# DevPod tool paths'; \

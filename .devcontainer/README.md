@@ -33,8 +33,9 @@ layer only invalidates that layer and everything below it.
 | 9 | GUI stack: Xvfb/x11vnc/noVNC/Chrome -- **optional, off by default** | Rare -- only if enabled |
 | 10 | Docker-in-Docker -- **optional, off by default** | Rare -- only if enabled |
 | 11 | Android toolchain: JDK, Android SDK/adb, optional emulator, Maestro -- **optional, off by default** | Rare -- only if enabled |
-| 12 | Personal apt packages: tmux, vim, emacs, ripgrep, ... | Occasional -- **add new tools here** |
-| 13 | Shell config, `.vimrc`, `.bash_aliases` | Frequent |
+| 12 | WeasyPrint HTML->PDF + Pango + fonts (incl. Times New Roman) -- **optional, on by default** | Rare |
+| 13 | Personal apt packages: tmux, vim, emacs, ripgrep, ... | Occasional -- **add new tools here** |
+| 14 | Shell config, `.vimrc`, `.bash_aliases` | Frequent |
 
 **Key design decisions:**
 Layer 1 is infrastructure that almost never changes (build tools). Node and
@@ -45,20 +46,21 @@ separate, optional interpreter stack via Miniforge -- `uv`/`~/.venv` remains
 the default for everyday Python work and is what VS Code's
 `python.defaultInterpreterPath` points at; conda's base environment is not
 auto-activated, so it only comes into play when you explicitly `conda
-activate`. The optional LaTeX, GUI, Docker-in-Docker, and Android layers
-(Layers 8-11) sit after Claude/Codex and before the personal apt and shell
-layers. Adding `htop` or `jq` rebuilds Layers 12-13 but leaves everything above
+activate`. The optional LaTeX, GUI, Docker-in-Docker, Android, and WeasyPrint
+layers (Layers 8-12) sit after Claude/Codex and before the personal apt and shell
+layers. Adding `htop` or `jq` rebuilds Layers 13-14 but leaves everything above
 cached. All apt-install layers use BuildKit cache mounts so `.deb` files are
 never re-downloaded from the internet, even on a layer rebuild.
 
 The LaTeX toolchain (Layer 8) is gated behind the `ENABLE_LATEX` build arg and
 skipped entirely by default. The GUI stack (Layer 9) is gated behind the
 `ENABLE_GUI` build arg, Docker-in-Docker (Layer 10) is gated behind
-`ENABLE_DOCKER_IN_DOCKER`, and Android (Layer 11) is gated behind
-`ENABLE_ANDROID`; all are skipped by default. These optional layers sit after
+`ENABLE_DOCKER_IN_DOCKER`, Android (Layer 11) is gated behind
+`ENABLE_ANDROID`; these are skipped by default. WeasyPrint (Layer 12) is
+gated behind `ENABLE_WEASYPRINT` and is **on** by default. These optional layers sit after
 the Node, Python, conda, and AI-tool layers, so toggling one preserves Layers
 1-7 while rebuilding that layer and everything below it. See
-[Enabling LaTeX](#enabling-latex), [Docker-in-Docker](#enabling-docker-in-docker),
+[Enabling LaTeX](#enabling-latex), [Enabling WeasyPrint](#enabling-weasyprint), [Docker-in-Docker](#enabling-docker-in-docker),
 and [Chrome GUI (noVNC)](#chrome-gui-novnc-optional) below to enable them.
 The Android emulator and system image are an additional opt-in controlled by
 `ENABLE_ANDROID_EMULATOR`; see [Android development (optional)](#android-development-optional).
@@ -84,10 +86,10 @@ layer cache and are much faster.
 
 ## Adding personal apt packages
 
-Edit **Layer 11** in `Dockerfile`:
+Edit **Layer 13** in `Dockerfile`:
 
 ```dockerfile
-# ── Layer 11: Personal apt packages ──
+# ── Layer 13: Personal apt packages ──
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
@@ -99,7 +101,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         htop       # ← add new packages here
 ```
 
-Then rebuild. Only Layer 12 and below rebuild -- Node, Python, conda, Claude, and Codex
+Then rebuild. Only Layer 13 and below rebuild -- Node, Python, conda, Claude, and Codex
 all stay cached.
 
 ## Enabling the GUI stack
@@ -131,6 +133,28 @@ The LaTeX toolchain is **off by default**. To enable it for a project:
    (`--recreate` is required -- `devpod up` reuses an already-running container and will not notice the Dockerfile/build-arg change otherwise.)
 
 This installs `texlive-latex-extra` and `latexmk`, including the standard LaTeX engines and commonly used packages.
+
+## Enabling WeasyPrint
+
+WeasyPrint (HTML/CSS -> PDF) is **on by default**. To disable it for a project:
+
+1. In `devcontainer.json`, change `"ENABLE_WEASYPRINT": "true"` to `"ENABLE_WEASYPRINT": "false"` in `build.args`.
+2. Rebuild:
+   ```bash
+   devpod up . --recreate --ide vscode
+   ```
+
+This installs WeasyPrint's native dependencies (Pango, HarfBuzz subsetting,
+fontconfig), Microsoft core fonts (Times New Roman, Arial, ... -- the EULA is
+accepted non-interactively), Liberation and DejaVu fonts, and the `weasyprint`
+Python package in `~/.venv`. The CLI is symlinked into `~/.local/bin`:
+
+```bash
+weasyprint letter.html letter.pdf
+fc-list | grep -i "times new roman"   # confirm the font is available
+```
+
+Or from Python (`~/.venv`): `from weasyprint import HTML; HTML("letter.html").write_pdf("letter.pdf")`.
 
 ## Android development (optional)
 
@@ -329,20 +353,21 @@ The cached image is reused -- the container is ready in seconds.
 | What changed | Layers rebuilt | Time |
 |---|---|---|
 | Mount added/changed | none (recreate only) | ~5 sec |
-| `.vimrc` / `.bash_aliases` / shell config | 13 | ~15 sec |
-| `ENABLE_LATEX` flipped on for the first time | 8-13 | several minutes |
-| `ENABLE_GUI` flipped on for the first time | 9-13 | ~2-3 min (Chrome download) |
-| `ENABLE_DOCKER_IN_DOCKER` flipped on for the first time | 10-13 | several minutes |
-| `ENABLE_ANDROID` flipped on for the first time | 11-13 | several minutes (SDK download) |
-| `ENABLE_ANDROID_EMULATOR` flipped on for the first time | 11-13 | longer (emulator image download) |
-| Personal apt package added (tmux, htop, ...) | 12-13 | ~1 min |
-| Claude Code updated | 6-13 | ~1-2 min |
-| Codex CLI updated | 7-13 | ~1-2 min |
-| Miniforge/conda changed | 5-13 | ~1 min |
-| Python venv packages changed | 4-13 | ~2 min |
-| uv / Python 3.12 version changed | 3-13 | ~3 min |
-| Node / nvm version changed | 2-13 | ~3-4 min |
-| System apt package added (rare) | 1-13 (full rebuild) | ~5-10 min |
+| `.vimrc` / `.bash_aliases` / shell config | 14 | ~15 sec |
+| `ENABLE_LATEX` flipped on for the first time | 8-14 | several minutes |
+| `ENABLE_GUI` flipped on for the first time | 9-14 | ~2-3 min (Chrome download) |
+| `ENABLE_DOCKER_IN_DOCKER` flipped on for the first time | 10-14 | several minutes |
+| `ENABLE_ANDROID` flipped on for the first time | 11-14 | several minutes (SDK download) |
+| `ENABLE_ANDROID_EMULATOR` flipped on for the first time | 11-14 | longer (emulator image download) |
+| `ENABLE_WEASYPRINT` flipped on (default) for the first time | 12-14 | ~1-2 min (font download) |
+| Personal apt package added (tmux, htop, ...) | 13-14 | ~1 min |
+| Claude Code updated | 6-14 | ~1-2 min |
+| Codex CLI updated | 7-14 | ~1-2 min |
+| Miniforge/conda changed | 5-14 | ~1 min |
+| Python venv packages changed | 4-14 | ~2 min |
+| uv / Python 3.12 version changed | 3-14 | ~3 min |
+| Node / nvm version changed | 2-14 | ~3-4 min |
+| System apt package added (rare) | 1-14 (full rebuild) | ~5-10 min |
 
 ## What's installed
 
@@ -367,6 +392,7 @@ The cached image is reused -- the container is ready in seconds.
 | **Android SDK** *(optional)* | command-line tools, platform-tools/`adb`, API platform, and build tools -- only if `ENABLE_ANDROID=true` |
 | **Android Emulator** *(optional)* | headless emulator plus API 35 Google APIs image -- only if `ENABLE_ANDROID_EMULATOR=true` |
 | **Maestro** *(optional)* | Android end-to-end UI tests and screenshots -- only if `ENABLE_ANDROID=true` |
+| **WeasyPrint** *(optional)* | `weasyprint` HTML->PDF CLI + Python package, Pango, Times New Roman/Liberation/DejaVu fonts -- on by default (`ENABLE_WEASYPRINT=true`) |
 
 **VS Code extensions:** Python, Ruff, Jupyter, Claude Code, Codex
 
@@ -406,7 +432,7 @@ container's `sshd_config` has no effect on a normal DevPod connection. noVNC
 ├── start-display.sh    # postCreateCommand -- starts Xvfb/VNC/noVNC/Fluxbox (no-ops if disabled)
 ├── fix-android-sdk-owner.sh # Repairs SDK ownership after UID remapping
 ├── start-emulator.sh   # Creates and cold-boots one or more Android AVDs
-├── .vimrc              # Copied into the image at build time (Layer 13)
-├── .bash_aliases       # Copied into the image at build time (Layer 13)
+├── .vimrc              # Copied into the image at build time (Layer 14)
+├── .bash_aliases       # Copied into the image at build time (Layer 14)
 └── README.md           # This file
 ```
